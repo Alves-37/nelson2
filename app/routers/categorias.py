@@ -32,6 +32,9 @@ CATEGORIAS_PADRAO: List[CategoriaOut] = [
     CategoriaOut(id=11, nome="Impressão e Cópias", descricao="Serviços de impressão, cópias e digitalização"),
     CategoriaOut(id=12, nome="Encadernação e Acabamento", descricao="Encadernação, plastificação e outros acabamentos"),
     CategoriaOut(id=13, nome="Insumos Internos", descricao="Papel, toner e insumos não vendidos diretamente"),
+
+    # Serviços gerais (sem controle de estoque)
+    CategoriaOut(id=14, nome="Serviços", descricao="Serviços em geral sem controle de estoque"),
 ]
 
 

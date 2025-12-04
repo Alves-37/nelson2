@@ -21,6 +21,7 @@ class User(DeclarativeBase):
     salario: Mapped[float] = mapped_column(Float, default=0.0)
     pode_abastecer: Mapped[bool] = mapped_column(Boolean, default=False)
     pode_gerenciar_despesas: Mapped[bool] = mapped_column(Boolean, default=False)
+    pode_fazer_devolucao: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Produto(DeclarativeBase):

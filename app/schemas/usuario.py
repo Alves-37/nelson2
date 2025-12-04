@@ -11,6 +11,7 @@ class UsuarioBase(BaseModel):
     salario: float = 0.0
     pode_abastecer: bool = False
     pode_gerenciar_despesas: bool = False
+    pode_fazer_devolucao: bool = False
 
 class UsuarioCreate(UsuarioBase):
     senha: str = Field(..., min_length=1)
@@ -25,6 +26,7 @@ class UsuarioUpdate(BaseModel):
     salario: Optional[float] = None
     pode_abastecer: Optional[bool] = None
     pode_gerenciar_despesas: Optional[bool] = None
+    pode_fazer_devolucao: Optional[bool] = None
     ativo: Optional[bool] = None
 
 class UsuarioResponse(UsuarioBase):

@@ -42,6 +42,7 @@ async def listar_usuarios(db: AsyncSession = Depends(get_db_session)):
                 'salario': usuario.salario,
                 'pode_abastecer': usuario.pode_abastecer,
                 'pode_gerenciar_despesas': usuario.pode_gerenciar_despesas,
+                'pode_fazer_devolucao': getattr(usuario, 'pode_fazer_devolucao', False),
                 'created_at': usuario.created_at.isoformat(),
                 'updated_at': usuario.updated_at.isoformat()
             }
@@ -133,7 +134,8 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
             nivel=usuario.nivel,
             salario=usuario.salario,
             pode_abastecer=usuario.pode_abastecer,
-            pode_gerenciar_despesas=usuario.pode_gerenciar_despesas
+            pode_gerenciar_despesas=usuario.pode_gerenciar_despesas,
+            pode_fazer_devolucao=usuario.pode_fazer_devolucao
         )
         
         db.add(novo_usuario)
@@ -152,6 +154,7 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
                     "ativo": bool(novo_usuario.ativo),
                     "pode_abastecer": bool(getattr(novo_usuario, 'pode_abastecer', False)),
                     "pode_gerenciar_despesas": bool(getattr(novo_usuario, 'pode_gerenciar_despesas', False)),
+                    "pode_fazer_devolucao": bool(getattr(novo_usuario, 'pode_fazer_devolucao', False)),
                     "updated_at": novo_usuario.updated_at.isoformat() if getattr(novo_usuario, 'updated_at', None) else None,
                 }
             })
@@ -201,6 +204,8 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
             update_data['pode_abastecer'] = usuario.pode_abastecer
         if hasattr(usuario, 'pode_gerenciar_despesas') and usuario.pode_gerenciar_despesas is not None:
             update_data['pode_gerenciar_despesas'] = usuario.pode_gerenciar_despesas
+        if hasattr(usuario, 'pode_fazer_devolucao') and usuario.pode_fazer_devolucao is not None:
+            update_data['pode_fazer_devolucao'] = usuario.pode_fazer_devolucao
         
         update_data['updated_at'] = datetime.utcnow()
         
@@ -226,6 +231,7 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
                     "ativo": bool(usuario_atualizado.ativo),
                     "pode_abastecer": bool(getattr(usuario_atualizado, 'pode_abastecer', False)),
                     "pode_gerenciar_despesas": bool(getattr(usuario_atualizado, 'pode_gerenciar_despesas', False)),
+                    "pode_fazer_devolucao": bool(getattr(usuario_atualizado, 'pode_fazer_devolucao', False)),
                     "updated_at": usuario_atualizado.updated_at.isoformat() if getattr(usuario_atualizado, 'updated_at', None) else None,
                 }
             })
