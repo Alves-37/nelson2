@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy import select, func
 from app.routers import health, produtos, usuarios, clientes, vendas, auth, categorias, ws
-from app.routers import metricas, relatorios, empresa_config, admin
+from app.routers import metricas, relatorios, empresa_config, admin, dividas
 from app.db.session import engine, AsyncSessionLocal
 from app.db.base import DeclarativeBase
 from app.db.models import User
