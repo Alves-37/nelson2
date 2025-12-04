@@ -167,7 +167,11 @@ async def relatorio_vendas(
 
     stmt = (
         select(Venda)
-        .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
+        .options(
+            selectinload(Venda.itens).selectinload(ItemVenda.produto),
+            selectinload(Venda.cliente),
+            selectinload(Venda.usuario),
+        )
         .where(Venda.created_at >= d1, Venda.created_at < d2_exclusive, Venda.cancelada == False)
     )
 
