@@ -117,6 +117,13 @@ async def relatorio_produtos(baixo_estoque: bool = False, db: AsyncSession = Dep
 
     if baixo_estoque:
         def is_baixo(p: Produto) -> bool:
+            # Ignorar categoria "Serviços" (id 15) no cálculo de baixo estoque
+            try:
+                if getattr(p, "categoria_id", None) == 15:
+                    return False
+            except Exception:
+                pass
+
             estoque = float(p.estoque or 0)
             minimo = float(p.estoque_minimo or 0)
             return (minimo > 0 and estoque <= minimo) or (minimo <= 0 and estoque <= 5)
