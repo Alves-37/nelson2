@@ -225,6 +225,42 @@ async def relatorio_vendas(
     story.append(Spacer(1, 8))
     story.append(Paragraph(f"Total geral: MT {total_geral:,.2f}", styles["Heading3"]))
 
+    # Tabela de itens vendidos (detalhe por produto)
+    itens_header = ["Data", "Produto", "Qtd", "Preço unit.", "Subtotal (MT)"]
+    itens_data = [itens_header]
+
+    for v in vendas:
+        dt = getattr(v, "created_at", None)
+        data_str = dt.strftime("%Y-%m-%d %H:%M") if isinstance(dt, datetime) else ""
+        for it in getattr(v, "itens", []) or []:
+            prod_nome = getattr(getattr(it, "produto", None), "nome", "") or "-"
+            qtd = float(getattr(it, "peso_kg", 0) or 0) if getattr(it, "peso_kg", 0) else float(getattr(it, "quantidade", 0) or 0)
+            preco_unit = float(getattr(it, "preco_unitario", 0) or 0)
+            subtotal = float(getattr(it, "subtotal", 0) or 0)
+            itens_data.append([
+                data_str,
+                prod_nome,
+                f"{qtd:,.2f}",
+                f"MT {preco_unit:,.2f}",
+                f"MT {subtotal:,.2f}",
+            ])
+
+    if len(itens_data) > 1:
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Itens vendidos", styles["Heading3"]))
+        itens_table = Table(itens_data, repeatRows=1)
+        itens_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ]))
+        story.append(itens_table)
+
     doc.build(story)
     pdf_bytes = buffer.getvalue()
     buffer.close()
