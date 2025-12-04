@@ -1,10 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from sqlalchemy import select, func
 from app.routers import health, produtos, usuarios, clientes, vendas, auth, categorias, ws
 from app.routers import metricas, relatorios, empresa_config, admin
-from app.db.session import engine
+from app.db.session import engine, AsyncSessionLocal
 from app.db.base import DeclarativeBase
+from app.db.models import User
+from app.core.security import get_password_hash
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -15,6 +18,23 @@ async def lifespan(app: FastAPI):
             print("Verificando estrutura do PostgreSQL...")
             await conn.run_sync(DeclarativeBase.metadata.create_all)
             print("Estrutura do banco verificada!")
+
+        # Garantir usuário técnico Neotrix para autoLogin do PDV online
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(User).where(func.lower(User.usuario) == func.lower("Neotrix"))
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                user = User(
+                    nome="Neotrix Tecnologias",
+                    usuario="Neotrix",
+                    senha_hash=get_password_hash("842384"),
+                    is_admin=True,
+                    ativo=True,
+                )
+                session.add(user)
+                await session.commit()
     except Exception as e:
         print(f"Erro ao conectar com o banco: {e}")
         # Continue mesmo com erro de banco para permitir healthcheck
