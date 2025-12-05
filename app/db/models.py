@@ -100,6 +100,56 @@ class EmpresaConfig(DeclarativeBase):
     logo_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
+class Divida(DeclarativeBase):
+    """Modelo de dívida no backend, alinhado ao esquema local."""
+    __tablename__ = "dividas"
+
+    # ID local opcional (inteiro) para mapear com o SQLite do PDV3
+    id_local: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    cliente_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=True)
+    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+    data_divida: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    valor_total: Mapped[float] = mapped_column(Float, nullable=False)
+    valor_original: Mapped[float] = mapped_column(Float, default=0.0)
+    desconto_aplicado: Mapped[float] = mapped_column(Float, default=0.0)
+    percentual_desconto: Mapped[float] = mapped_column(Float, default=0.0)
+    valor_pago: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(20), default="Pendente")
+    observacao: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    cliente: Mapped[Optional["Cliente"]] = relationship("Cliente")
+    usuario: Mapped[Optional["User"]] = relationship("User")
+    itens: Mapped[list["ItemDivida"]] = relationship("ItemDivida", back_populates="divida")
+    pagamentos: Mapped[list["PagamentoDivida"]] = relationship("PagamentoDivida", back_populates="divida")
+
+
+class ItemDivida(DeclarativeBase):
+    __tablename__ = "itens_divida"
+
+    divida_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dividas.id"), nullable=False)
+    produto_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("produtos.id"), nullable=False)
+    quantidade: Mapped[float] = mapped_column(Float, nullable=False)
+    preco_unitario: Mapped[float] = mapped_column(Float, nullable=False)
+    subtotal: Mapped[float] = mapped_column(Float, nullable=False)
+    peso_kg: Mapped[float] = mapped_column(Float, default=0.0)
+
+    divida: Mapped["Divida"] = relationship("Divida", back_populates="itens")
+    produto: Mapped["Produto"] = relationship("Produto")
+
+
+class PagamentoDivida(DeclarativeBase):
+    __tablename__ = "pagamentos_divida"
+
+    divida_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dividas.id"), nullable=False)
+    data_pagamento: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    valor: Mapped[float] = mapped_column(Float, nullable=False)
+    forma_pagamento: Mapped[str] = mapped_column(String(50), nullable=False)
+    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+
+    divida: Mapped["Divida"] = relationship("Divida", back_populates="pagamentos")
+    usuario: Mapped[Optional["User"]] = relationship("User")
+
+
 # Adicionar relacionamentos reversos
 Cliente.vendas = relationship("Venda", back_populates="cliente")
 
