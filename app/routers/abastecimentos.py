@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, asc
+from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime
 import uuid
@@ -54,7 +55,13 @@ async def get_historico_abastecimentos(
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="usuario_id inválido")
 
         # Base query
-        query = select(Abastecimento)
+        query = (
+            select(Abastecimento)
+            .options(
+                selectinload(Abastecimento.produto),
+                selectinload(Abastecimento.usuario),
+            )
+        )
         if conditions:
             query = query.where(and_(*conditions))
 
