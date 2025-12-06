@@ -5,6 +5,8 @@ from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime
 import uuid
+from pydantic import BaseModel, Field
+from typing import Optional as Opt
 
 from app.db.database import get_db_session
 from app.db.models import Abastecimento, Produto, User
@@ -105,3 +107,93 @@ async def get_historico_abastecimentos(
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao buscar histórico: {e}")
+
+class AbastecimentoIn(BaseModel):
+    local_id: Opt[str] = Field(None, description="Identificador local opcional para correlacionar resposta")
+    produto_id: Opt[str] = Field(None, description="UUID do produto")
+    produto_codigo: Opt[str] = Field(None, description="Código único do produto")
+    usuario_id: Opt[str] = Field(None, description="UUID do usuário")
+    quantidade: float
+    custo_unitario: float
+    total_custo: Opt[float] = None
+    observacao: Opt[str] = None
+    created_at: Opt[datetime] = None
+
+class AbastecimentoBulkIn(BaseModel):
+    items: List[AbastecimentoIn]
+
+@router.post("/bulk")
+async def bulk_create_abastecimentos(payload: AbastecimentoBulkIn, db: AsyncSession = Depends(get_db_session)):
+    try:
+        inserted = 0
+        conflicts: List[dict] = []
+        accepted: List[str] = []
+
+        for item in payload.items:
+            try:
+                # Resolver produto por ID ou código
+                produto_obj = None
+                if item.produto_id:
+                    try:
+                        pid = uuid.UUID(item.produto_id)
+                        res = await db.execute(select(Produto).where(Produto.id == pid))
+                        produto_obj = res.scalar_one_or_none()
+                    except ValueError:
+                        pass
+                if not produto_obj and item.produto_codigo:
+                    res = await db.execute(select(Produto).where(Produto.codigo == item.produto_codigo))
+                    produto_obj = res.scalar_one_or_none()
+
+                if not produto_obj:
+                    conflicts.append({
+                        "reason": "produto_nao_encontrado",
+                        "produto_id": item.produto_id,
+                        "produto_codigo": item.produto_codigo,
+                        "local_id": item.local_id,
+                    })
+                    continue
+
+                usuario_uuid = None
+                if item.usuario_id:
+                    try:
+                        usuario_uuid = uuid.UUID(item.usuario_id)
+                    except ValueError:
+                        usuario_uuid = None
+
+                total_custo = item.total_custo if item.total_custo is not None else (float(item.quantidade) * float(item.custo_unitario))
+
+                abast = Abastecimento(
+                    produto_id=produto_obj.id,
+                    usuario_id=usuario_uuid,
+                    quantidade=float(item.quantidade),
+                    custo_unitario=float(item.custo_unitario),
+                    total_custo=float(total_custo),
+                    observacao=item.observacao,
+                )
+
+                db.add(abast)
+                await db.flush()
+
+                # Ajuste de created_at se informado
+                if item.created_at:
+                    await db.execute(
+                        Abastecimento.__table__.update()
+                        .where(Abastecimento.id == abast.id)
+                        .values(created_at=item.created_at)
+                    )
+
+                inserted += 1
+                if item.local_id is not None:
+                    accepted.append(str(item.local_id))
+            except Exception as ie:
+                conflicts.append({"reason": "erro_interno", "message": str(ie), "local_id": item.local_id})
+
+        if inserted:
+            await db.commit()
+        else:
+            await db.rollback()
+
+        return {"inserted": inserted, "accepted": accepted, "conflicts": conflicts}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao importar abastecimentos: {e}")
