@@ -64,6 +64,21 @@ class DividaOut(BaseModel):
         from_attributes = True
 
 
+class ItemDividaOut(BaseModel):
+    produto_id: uuid.UUID
+    produto_nome: Optional[str] = None
+    quantidade: float
+    preco_unitario: float
+    subtotal: float
+
+    class Config:
+        from_attributes = True
+
+
+class DividaDetailOut(DividaOut):
+    itens: List[ItemDividaOut] = []
+
+
 def _parse_uuid(value: Optional[str]) -> Optional[uuid.UUID]:
     if not value:
         return None
@@ -145,6 +160,49 @@ async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Erro ao criar dívida: {str(e)}")
 
+
+@router.get("/id/{divida_id}", response_model=DividaDetailOut)
+async def obter_divida(divida_id: str, db: AsyncSession = Depends(get_db_session)):
+    try:
+        divida_uuid = _parse_uuid(divida_id)
+        if not divida_uuid:
+            raise HTTPException(status_code=400, detail="ID de dívida inválido.")
+
+        result = await db.execute(select(Divida).where(Divida.id == divida_uuid))
+        divida = result.scalar_one_or_none()
+        if not divida:
+            raise HTTPException(status_code=404, detail="Dívida não encontrada.")
+
+        itens_result = await db.execute(
+            select(ItemDivida, Produto.nome.label("produto_nome"))
+            .join(Produto, ItemDivida.produto_id == Produto.id, isouter=True)
+            .where(ItemDivida.divida_id == divida.id)
+        )
+        itens_rows = itens_result.all()
+        itens_out: List[ItemDividaOut] = []
+        for it, prod_nome in itens_rows:
+            try:
+                itens_out.append(ItemDividaOut(
+                    produto_id=it.produto_id,
+                    produto_nome=prod_nome,
+                    quantidade=float(it.quantidade or 0.0),
+                    preco_unitario=float(it.preco_unitario or 0.0),
+                    subtotal=float(it.subtotal or 0.0),
+                ))
+            except Exception:
+                continue
+
+        try:
+            setattr(divida, 'cliente_nome', getattr(getattr(divida, 'cliente', None), 'nome', None))
+        except Exception:
+            setattr(divida, 'cliente_nome', None)
+
+        base = DividaOut.model_validate(divida)
+        return DividaDetailOut(**base.model_dump(), itens=itens_out)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao obter dívida: {str(e)}")
 
 @router.post("/sync")
 async def sync_dividas(payload: DividaSyncRequest, db: AsyncSession = Depends(get_db_session)):
