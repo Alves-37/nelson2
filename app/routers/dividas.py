@@ -111,6 +111,27 @@ def _to_divida_out(divida: Divida, cliente_nome: Optional[str] = None, usuario_n
         # Em último caso, propagar erro controlado
         raise HTTPException(status_code=500, detail=f"Falha ao construir resposta da dívida: {e}")
 
+def _to_divida_out_from_snapshot(data: dict) -> DividaOut:
+    try:
+        return DividaOut(
+            id=data.get('id'),
+            id_local=data.get('id_local'),
+            cliente_id=data.get('cliente_id'),
+            usuario_id=data.get('usuario_id'),
+            cliente_nome=data.get('cliente_nome'),
+            usuario_nome=data.get('usuario_nome'),
+            data_divida=data.get('data_divida'),
+            valor_total=float(data.get('valor_total') or 0.0),
+            valor_original=float(data.get('valor_original') or 0.0),
+            desconto_aplicado=float(data.get('desconto_aplicado') or 0.0),
+            percentual_desconto=float(data.get('percentual_desconto') or 0.0),
+            valor_pago=float(data.get('valor_pago') or 0.0),
+            status=str(data.get('status') or ''),
+            observacao=data.get('observacao'),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Falha ao construir resposta da dívida: {e}")
+
 @router.post("/", response_model=DividaOut, status_code=201)
 async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_session)):
     """Cria uma nova dívida com itens, alinhada ao modelo local do PDV3."""
@@ -472,6 +493,39 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
         await db.refresh(divida)
         await db.refresh(pagamento)
 
+        # Snapshot dos campos da dívida (evitar expirations após novo commit)
+        snap_cli_nome = None
+        snap_usr_nome = None
+        try:
+            if divida.cliente_id:
+                r = await db.execute(select(Cliente.nome).where(Cliente.id == divida.cliente_id))
+                snap_cli_nome = r.scalar_one_or_none()
+        except Exception:
+            snap_cli_nome = None
+        try:
+            if divida.usuario_id:
+                r = await db.execute(select(User.nome).where(User.id == divida.usuario_id))
+                snap_usr_nome = r.scalar_one_or_none()
+        except Exception:
+            snap_usr_nome = None
+
+        divida_snapshot = {
+            'id': divida.id,
+            'id_local': divida.id_local,
+            'cliente_id': divida.cliente_id,
+            'usuario_id': divida.usuario_id,
+            'cliente_nome': snap_cli_nome,
+            'usuario_nome': snap_usr_nome,
+            'data_divida': divida.data_divida,
+            'valor_total': divida.valor_total,
+            'valor_original': divida.valor_original,
+            'desconto_aplicado': divida.desconto_aplicado,
+            'percentual_desconto': divida.percentual_desconto,
+            'valor_pago': divida.valor_pago,
+            'status': divida.status,
+            'observacao': divida.observacao,
+        }
+
         # Criar uma Venda correspondente ao pagamento da dívida (contabilizar em relatórios)
         try:
             venda = Venda(
@@ -528,23 +582,8 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
             # Não falhar o endpoint se a criação da venda falhar; apenas prosseguir
             await db.rollback()
 
-        # Buscar nomes sem lazy
-        cli_nome = None
-        usr_nome = None
-        try:
-            if divida.cliente_id:
-                r = await db.execute(select(Cliente.nome).where(Cliente.id == divida.cliente_id))
-                cli_nome = r.scalar_one_or_none()
-        except Exception:
-            cli_nome = None
-        try:
-            if divida.usuario_id:
-                r = await db.execute(select(User.nome).where(User.id == divida.usuario_id))
-                usr_nome = r.scalar_one_or_none()
-        except Exception:
-            usr_nome = None
-
-        return _to_divida_out(divida, cliente_nome=cli_nome, usuario_nome=usr_nome)
+        # Construir resposta a partir do snapshot para evitar acesso ao ORM após commit
+        return _to_divida_out_from_snapshot(divida_snapshot)
     except HTTPException:
         await db.rollback()
         raise
