@@ -51,6 +51,7 @@ class DividaOut(BaseModel):
     cliente_id: Optional[uuid.UUID]
     usuario_id: Optional[uuid.UUID]
     cliente_nome: Optional[str] = None
+    usuario_nome: Optional[str] = None
     data_divida: datetime
     valor_total: float
     valor_original: float
@@ -423,12 +424,19 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
 
         # Snapshot seguro para construir resposta sem tocar no ORM após novo commit
         snap_cli_nome = None
+        snap_usr_nome = None
         try:
             if divida.cliente_id:
                 r = await db.execute(select(Cliente.nome).where(Cliente.id == divida.cliente_id))
                 snap_cli_nome = r.scalar_one_or_none()
         except Exception:
             snap_cli_nome = None
+        try:
+            if divida.usuario_id:
+                r2 = await db.execute(select(User.nome).where(User.id == divida.usuario_id))
+                snap_usr_nome = r2.scalar_one_or_none()
+        except Exception:
+            snap_usr_nome = None
 
         divida_snapshot = {
             'id': divida.id,
@@ -436,6 +444,7 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
             'cliente_id': divida.cliente_id,
             'usuario_id': divida.usuario_id,
             'cliente_nome': snap_cli_nome,
+            'usuario_nome': snap_usr_nome,
             'data_divida': divida.data_divida,
             'valor_total': float(divida.valor_total or 0.0),
             'valor_original': float(divida.valor_original or 0.0),
@@ -507,6 +516,7 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
                 cliente_id=divida_snapshot['cliente_id'],
                 usuario_id=divida_snapshot['usuario_id'],
                 cliente_nome=divida_snapshot['cliente_nome'],
+                usuario_nome=divida_snapshot['usuario_nome'],
                 data_divida=divida_snapshot['data_divida'],
                 valor_total=divida_snapshot['valor_total'],
                 valor_original=divida_snapshot['valor_original'],
