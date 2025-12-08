@@ -88,6 +88,27 @@ def _parse_uuid(value: Optional[str]) -> Optional[uuid.UUID]:
         return None
 
 
+def _to_divida_out(divida: Divida, cliente_nome: Optional[str] = None) -> DividaOut:
+    try:
+        return DividaOut(
+            id=getattr(divida, 'id'),
+            id_local=getattr(divida, 'id_local', None),
+            cliente_id=getattr(divida, 'cliente_id', None),
+            usuario_id=getattr(divida, 'usuario_id', None),
+            cliente_nome=cliente_nome,
+            data_divida=getattr(divida, 'data_divida'),
+            valor_total=float(getattr(divida, 'valor_total', 0.0) or 0.0),
+            valor_original=float(getattr(divida, 'valor_original', 0.0) or 0.0),
+            desconto_aplicado=float(getattr(divida, 'desconto_aplicado', 0.0) or 0.0),
+            percentual_desconto=float(getattr(divida, 'percentual_desconto', 0.0) or 0.0),
+            valor_pago=float(getattr(divida, 'valor_pago', 0.0) or 0.0),
+            status=str(getattr(divida, 'status', '') or ''),
+            observacao=getattr(divida, 'observacao', None),
+        )
+    except Exception as e:
+        # Em último caso, propagar erro controlado
+        raise HTTPException(status_code=500, detail=f"Falha ao construir resposta da dívida: {e}")
+
 @router.post("/", response_model=DividaOut, status_code=201)
 async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_session)):
     """Cria uma nova dívida com itens, alinhada ao modelo local do PDV3."""
@@ -152,7 +173,7 @@ async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_
         except Exception:
             setattr(nova_divida, 'cliente_nome', None)
 
-        return DividaOut.model_validate(nova_divida)
+        return _to_divida_out(nova_divida, cliente_nome=getattr(getattr(nova_divida, 'cliente', None), 'nome', None))
     except HTTPException:
         await db.rollback()
         raise
@@ -200,7 +221,7 @@ async def obter_divida(divida_id: str, db: AsyncSession = Depends(get_db_session
         except Exception:
             setattr(divida, 'cliente_nome', None)
 
-        base = DividaOut.model_validate(divida)
+        base = _to_divida_out(divida, cliente_nome=getattr(getattr(divida, 'cliente', None), 'nome', None))
         return DividaDetailOut(**base.model_dump(), itens=itens_out)
     except HTTPException:
         raise
@@ -486,7 +507,7 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
         except Exception:
             setattr(divida, 'cliente_nome', None)
 
-        return DividaOut.model_validate(divida)
+        return _to_divida_out(divida, cliente_nome=getattr(getattr(divida, 'cliente', None), 'nome', None))
     except HTTPException:
         await db.rollback()
         raise
