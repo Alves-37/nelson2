@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import uuid
@@ -45,12 +46,12 @@ class DividaSyncRequest(BaseModel):
 
 
 class DividaOut(BaseModel):
-    id: str
+    id: uuid.UUID
     id_local: Optional[int]
-    cliente_id: Optional[str]
-    usuario_id: Optional[str]
+    cliente_id: Optional[uuid.UUID]
+    usuario_id: Optional[uuid.UUID]
     cliente_nome: Optional[str] = None
-    data_divida: str
+    data_divida: datetime
     valor_total: float
     valor_original: float
     desconto_aplicado: float
