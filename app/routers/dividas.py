@@ -7,7 +7,7 @@ from sqlalchemy import select
 import uuid
 
 from app.db.database import get_db_session
-from app.db.models import Divida, ItemDivida, PagamentoDivida, Produto, Cliente, User
+from app.db.models import Divida, ItemDivida, PagamentoDivida, Produto, Cliente, User, Venda, ItemVenda
 
 
 router = APIRouter(prefix="/api/dividas", tags=["dividas"])
@@ -423,7 +423,6 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
 
         # Criar Venda correspondente ao pagamento da dívida
         try:
-            from app.db.models import Venda
             venda = Venda(
                 usuario_id=usuario_uuid,
                 cliente_id=divida.cliente_id,
@@ -434,6 +433,43 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
                 cancelada=False,
             )
             db.add(venda)
+            await db.flush()
+
+            # Garantir produto marcador 'PAGDIV'
+            prod_res = await db.execute(select(Produto).where(Produto.codigo == "PAGDIV"))
+            prod = prod_res.scalar_one_or_none()
+            if not prod:
+                prod = Produto(
+                    codigo="PAGDIV",
+                    nome="Pagamento de Dívida",
+                    descricao="Item sintético para registrar pagamento de dívida",
+                    preco_custo=0.0,
+                    preco_venda=0.0,
+                    estoque=0.0,
+                    estoque_minimo=0.0,
+                    categoria_id=None,
+                    venda_por_peso=False,
+                    unidade_medida='un',
+                    ativo=True,
+                    taxa_iva=0.0,
+                    codigo_imposto=None,
+                )
+                db.add(prod)
+                await db.flush()
+
+            valor_pago = float(payload.valor)
+            item = ItemVenda(
+                venda_id=venda.id,
+                produto_id=prod.id,
+                quantidade=1,
+                peso_kg=0.0,
+                preco_unitario=valor_pago,
+                subtotal=valor_pago,
+                taxa_iva=0.0,
+                base_iva=0.0,
+                valor_iva=0.0,
+            )
+            db.add(item)
             await db.commit()
         except Exception:
             await db.rollback()
