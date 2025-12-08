@@ -421,6 +421,31 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
         await db.refresh(divida)
         await db.refresh(pagamento)
 
+        # Snapshot seguro para construir resposta sem tocar no ORM após novo commit
+        snap_cli_nome = None
+        try:
+            if divida.cliente_id:
+                r = await db.execute(select(Cliente.nome).where(Cliente.id == divida.cliente_id))
+                snap_cli_nome = r.scalar_one_or_none()
+        except Exception:
+            snap_cli_nome = None
+
+        divida_snapshot = {
+            'id': divida.id,
+            'id_local': divida.id_local,
+            'cliente_id': divida.cliente_id,
+            'usuario_id': divida.usuario_id,
+            'cliente_nome': snap_cli_nome,
+            'data_divida': divida.data_divida,
+            'valor_total': float(divida.valor_total or 0.0),
+            'valor_original': float(divida.valor_original or 0.0),
+            'desconto_aplicado': float(divida.desconto_aplicado or 0.0),
+            'percentual_desconto': float(divida.percentual_desconto or 0.0),
+            'valor_pago': float(divida.valor_pago or 0.0),
+            'status': divida.status,
+            'observacao': divida.observacao,
+        }
+
         # Criar Venda correspondente ao pagamento da dívida
         try:
             venda = Venda(
@@ -474,13 +499,25 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
         except Exception:
             await db.rollback()
 
-        # Injetar nome do cliente, se disponível
+        # Construir resposta a partir do snapshot (evita lazy loading após commit)
         try:
-            setattr(divida, 'cliente_nome', getattr(getattr(divida, 'cliente', None), 'nome', None))
-        except Exception:
-            setattr(divida, 'cliente_nome', None)
-
-        return DividaOut.model_validate(divida)
+            return DividaOut(
+                id=divida_snapshot['id'],
+                id_local=divida_snapshot['id_local'],
+                cliente_id=divida_snapshot['cliente_id'],
+                usuario_id=divida_snapshot['usuario_id'],
+                cliente_nome=divida_snapshot['cliente_nome'],
+                data_divida=divida_snapshot['data_divida'],
+                valor_total=divida_snapshot['valor_total'],
+                valor_original=divida_snapshot['valor_original'],
+                desconto_aplicado=divida_snapshot['desconto_aplicado'],
+                percentual_desconto=divida_snapshot['percentual_desconto'],
+                valor_pago=divida_snapshot['valor_pago'],
+                status=divida_snapshot['status'],
+                observacao=divida_snapshot['observacao'],
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Falha ao construir resposta da dívida: {e}")
     except HTTPException:
         await db.rollback()
         raise

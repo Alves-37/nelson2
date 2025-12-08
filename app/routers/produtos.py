@@ -52,13 +52,13 @@ class ProdutoResponse(BaseModel):
     preco_venda: float
     estoque: float
     estoque_minimo: float
-    categoria_id: int = None
+    categoria_id: Optional[int] = None
     venda_por_peso: bool
     unidade_medida: str
     taxa_iva: float
     ativo: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -74,13 +74,13 @@ class ProdutoResponse(BaseModel):
             preco_venda=obj.preco_venda,
             estoque=obj.estoque,
             estoque_minimo=obj.estoque_minimo,
-            categoria_id=obj.categoria_id,
+            categoria_id=getattr(obj, "categoria_id", None),
             venda_por_peso=obj.venda_por_peso,
             unidade_medida=obj.unidade_medida,
             taxa_iva=getattr(obj, "taxa_iva", 0.0),
             ativo=obj.ativo,
-            created_at=obj.created_at,
-            updated_at=obj.updated_at
+            created_at=getattr(obj, "created_at", None),
+            updated_at=getattr(obj, "updated_at", None)
         )
 
 @router.get("/", response_model=List[ProdutoResponse])
