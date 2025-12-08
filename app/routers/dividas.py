@@ -204,6 +204,44 @@ async def obter_divida(divida_id: str, db: AsyncSession = Depends(get_db_session
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao obter dívida: {str(e)}")
 
+@router.get("/", response_model=List[DividaOut])
+async def listar_dividas(
+    cliente_id: Optional[str] = None,
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Lista todas as dívidas, com filtros opcionais por cliente e status.
+
+    - Se status for informado (ex.: 'Pendente', 'Parcial', 'Quitado'), filtra por igualdade.
+    - Se cliente_id (UUID) for informado, filtra por cliente.
+    """
+    try:
+        stmt = (
+            select(Divida, Cliente.nome.label("cliente_nome"))
+            .join(Cliente, Divida.cliente_id == Cliente.id, isouter=True)
+        )
+
+        cliente_uuid = _parse_uuid(cliente_id)
+        if cliente_uuid:
+            stmt = stmt.where(Divida.cliente_id == cliente_uuid)
+
+        if status:
+            stmt = stmt.where(Divida.status == status)
+
+        result = await db.execute(stmt.order_by(Divida.data_divida.desc()))
+        rows = result.all()
+
+        resposta: list[DividaOut] = []
+        for divida, cli_nome in rows:
+            try:
+                setattr(divida, 'cliente_nome', cli_nome)
+            except Exception:
+                setattr(divida, 'cliente_nome', None)
+            resposta.append(DividaOut.model_validate(divida))
+        return resposta
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao listar dívidas: {str(e)}")
+
 @router.post("/sync")
 async def sync_dividas(payload: DividaSyncRequest, db: AsyncSession = Depends(get_db_session)):
     """Sincroniza dívidas em lote a partir do PDV, usando id_local como chave.
