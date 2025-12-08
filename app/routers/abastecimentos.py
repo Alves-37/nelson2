@@ -161,12 +161,14 @@ async def bulk_create_abastecimentos(payload: AbastecimentoBulkIn, db: AsyncSess
                         usuario_uuid = None
 
                 total_custo = item.total_custo if item.total_custo is not None else (float(item.quantidade) * float(item.custo_unitario))
+                total_val = float(item.quantidade) * float(item.custo_unitario)
 
                 abast = Abastecimento(
                     produto_id=produto_obj.id,
                     usuario_id=usuario_uuid,
                     quantidade=float(item.quantidade),
                     custo_unitario=float(item.custo_unitario),
+                    total=float(total_val),
                     total_custo=float(total_custo),
                     observacao=item.observacao,
                 )

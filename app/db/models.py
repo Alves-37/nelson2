@@ -167,6 +167,7 @@ class Abastecimento(DeclarativeBase):
     usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True, index=True)
     quantidade: Mapped[float] = mapped_column(Float, nullable=False)
     custo_unitario: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    total: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_custo: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     observacao: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
