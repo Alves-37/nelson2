@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import sys
 from datetime import datetime
 import subprocess
+import re
 
 # Carregar variáveis de ambiente (se houver .env)
 load_dotenv()
@@ -100,22 +101,27 @@ class DatabaseReset:
             return {}
     
     async def drop_all_tables(self):
-        """Remover todas as tabelas"""
+        """Remover todas as tabelas (mantido por compatibilidade; prefira truncate_all_tables)."""
         print("🗑️  Removendo todas as tabelas...")
         
         try:
-            # Lista de tabelas para remover (ordem importa devido às foreign keys)
-            tables_to_drop = [
-                'itens_venda',
-                'vendas', 
-                'produtos',
-                'clientes',
-                'users'
-            ]
-            
-            for table in tables_to_drop:
+            tables = await self.conn.fetch(
+                """
+                SELECT tablename
+                FROM pg_tables
+                WHERE schemaname = 'public'
+                """
+            )
+            table_names = [t['tablename'] for t in tables]
+            if not table_names:
+                print("✅ Nenhuma tabela encontrada para remover")
+                return
+
+            for table in table_names:
+                if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", table or ""):
+                    continue
                 try:
-                    await self.conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+                    await self.conn.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
                     print(f"   - Tabela {table} removida")
                 except Exception as e:
                     print(f"   - Erro ao remover {table}: {e}")
@@ -124,6 +130,38 @@ class DatabaseReset:
             
         except Exception as e:
             print(f"❌ Erro ao remover tabelas: {e}")
+            raise
+
+    async def truncate_all_tables(self):
+        """Apagar TODOS os dados preservando a estrutura (TRUNCATE em todas as tabelas do schema public)."""
+        print("🧹 Limpando TODOS os dados (TRUNCATE) preservando a estrutura...")
+
+        try:
+            tables = await self.conn.fetch(
+                """
+                SELECT tablename
+                FROM pg_tables
+                WHERE schemaname = 'public'
+                """
+            )
+            table_names = [t['tablename'] for t in tables]
+            if not table_names:
+                print("✅ Nenhuma tabela encontrada para limpar")
+                return
+
+            # Evitar apagar tabelas de migração (se existirem)
+            table_names = [t for t in table_names if t not in ('alembic_version',)]
+
+            # TRUNCATE em loop (ordem não importa com CASCADE)
+            for table in table_names:
+                if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", table or ""):
+                    continue
+                await self.conn.execute(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE')
+                print(f"   - {table}: OK")
+
+            print("✅ Todos os dados removidos (estrutura preservada)")
+        except Exception as e:
+            print(f"❌ Erro ao limpar dados: {e}")
             raise
     
     async def create_tables(self):
@@ -223,20 +261,36 @@ class DatabaseReset:
         print("👤 Criando usuário admin padrão...")
         
         try:
-            # Hash da senha '842384' (você deve usar bcrypt em produção)
-            from passlib.context import CryptContext
-            pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-            senha_hash = pwd_context.hash("842384")
-            
+            from werkzeug.security import generate_password_hash
+            senha_hash = generate_password_hash("842384")
+
             import uuid
             admin_uuid = uuid.uuid4()
-            
-            await self.conn.execute("""
-                INSERT INTO usuarios (id, nome, usuario, senha_hash, is_admin, ativo)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            """, admin_uuid, "Hélder Alves", "Alves", senha_hash, True, True)
-            
-            print("✅ Usuário admin criado (nome: Hélder Alves, login: Alves, senha: 842384)")
+
+            await self.conn.execute(
+                """
+                INSERT INTO usuarios (
+                    id, nome, usuario, senha_hash,
+                    is_admin, ativo,
+                    nivel, salario,
+                    pode_abastecer, pode_gerenciar_despesas, pode_fazer_devolucao
+                )
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                """,
+                admin_uuid,
+                "Neotrix Tecnologias",
+                "Neotrix",
+                senha_hash,
+                True,
+                True,
+                2,
+                0.0,
+                True,
+                True,
+                True,
+            )
+
+            print("✅ Usuário admin criado (nome: Neotrix Tecnologias, login: Neotrix, senha: 842384)")
             
         except Exception as e:
             print(f"❌ Erro ao criar usuário admin: {e}")
@@ -249,22 +303,19 @@ class DatabaseReset:
         try:
             # 1. Fazer backup
             backup_data = await self.backup_data()
-            
-            # 2. Remover tabelas
-            await self.drop_all_tables()
-            
-            # 3. Recriar tabelas
-            await self.create_tables()
-            
-            # 4. (Opcional) Criar usuário admin - DESATIVADO por padrão para não atrapalhar a sincronização inicial
-            # await self.create_admin_user()
+
+            # 2. Limpar dados (preservar estrutura real do backend)
+            await self.truncate_all_tables()
+
+            # 3. Criar usuário admin padrão
+            await self.create_admin_user()
             
             print("=" * 60)
             print("✅ RESET COMPLETO CONCLUÍDO COM SUCESSO!")
             print("📊 Resumo:")
             print(f"   - Backup realizado: {len(backup_data)} tabelas")
-            print("   - Todas as tabelas recriadas")
-            print("   - Usuário admin NÃO foi criado automaticamente (intencional)")
+            print("   - Todas as tabelas foram truncadas (dados removidos)")
+            print("   - Usuário admin foi recriado automaticamente")
             
         except Exception as e:
             print(f"❌ ERRO NO RESET: {e}")
@@ -278,25 +329,16 @@ class DatabaseReset:
         try:
             # Fazer backup
             backup_data = await self.backup_data()
-            
-            # Limpar dados das tabelas (ordem importa)
-            tables_to_clear = ['itens_venda', 'vendas', 'produtos', 'clientes', 'usuarios']
-            
-            for table in tables_to_clear:
-                try:
-                    result = await self.conn.execute(f"DELETE FROM {table}")
-                    print(f"   - Dados da tabela {table} removidos")
-                except Exception as e:
-                    print(f"   - Erro ao limpar {table}: {e}")
-            
-            # (Opcional) Criar usuário admin - DESATIVADO por padrão para não atrapalhar a sincronização inicial
-            # await self.create_admin_user()
+
+            # Limpar dados de todas as tabelas e recriar admin
+            await self.truncate_all_tables()
+            await self.create_admin_user()
             
             print("=" * 60)
             print("✅ LIMPEZA DE DADOS CONCLUÍDA!")
             print("   - Estrutura das tabelas mantida")
             print("   - Todos os dados removidos")
-            print("   - Usuário admin NÃO foi recriado automaticamente (intencional)")
+            print("   - Usuário admin foi recriado automaticamente")
             
         except Exception as e:
             print(f"❌ ERRO NA LIMPEZA: {e}")
