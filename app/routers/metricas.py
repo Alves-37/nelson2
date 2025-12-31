@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi import Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from datetime import datetime, date
 import asyncio
 
@@ -121,6 +121,98 @@ async def vendas_mes(
         async with _cache_lock:
             cached = _metrics_cache["vendas_mes"]["value"]
         return {"ano_mes": datetime.utcnow().strftime("%Y-%m"), "total": float(cached or 0.0), "warning": "cached"}
+
+
+@router.get("/lucro-dia")
+async def lucro_dia(
+    data: str | None = Query(default=None, description="Data no formato YYYY-MM-DD (timezone do cliente)"),
+    db: AsyncSession = Depends(get_db_session),
+):
+    try:
+        alvo = date.fromisoformat(data) if data else date.today()
+    except Exception:
+        alvo = date.today()
+
+    qtd_expr = case(
+        (func.coalesce(ItemVenda.peso_kg, 0.0) > 0.0, func.coalesce(ItemVenda.peso_kg, 0.0)),
+        else_=func.coalesce(ItemVenda.quantidade, 0),
+    )
+    custo_unit_expr = func.nullif(func.coalesce(ItemVenda.preco_custo_unitario, 0.0), 0.0)
+    custo_unit_final = func.coalesce(custo_unit_expr, func.coalesce(Produto.preco_custo, 0.0))
+
+    stmt = (
+        select(
+            func.coalesce(
+                func.sum((func.coalesce(ItemVenda.preco_unitario, 0.0) - custo_unit_final) * qtd_expr),
+                0.0,
+            )
+        )
+        .select_from(ItemVenda)
+        .join(Venda, ItemVenda.venda_id == Venda.id)
+        .join(Produto, ItemVenda.produto_id == Produto.id)
+        .where(Venda.cancelada == False, func.date(Venda.created_at) == alvo)
+    )
+
+    try:
+        result = await db.execute(stmt)
+        total = float(result.scalar() or 0.0)
+        return {"data": str(alvo), "total": total}
+    except Exception:
+        return {"data": str(alvo), "total": 0.0}
+
+
+@router.get("/lucro-mes")
+async def lucro_mes(
+    ano_mes: str | None = Query(default=None, description="Ano-mês no formato YYYY-MM (timezone do cliente)"),
+    db: AsyncSession = Depends(get_db_session),
+):
+    try:
+        if ano_mes:
+            try:
+                ano, mes = map(int, ano_mes.split("-"))
+                primeiro_dia = date(ano, mes, 1)
+            except Exception:
+                dnow = datetime.utcnow()
+                primeiro_dia = date(dnow.year, dnow.month, 1)
+        else:
+            dnow = datetime.utcnow()
+            primeiro_dia = date(dnow.year, dnow.month, 1)
+
+        proximo_mes = date(
+            primeiro_dia.year + (1 if primeiro_dia.month == 12 else 0),
+            1 if primeiro_dia.month == 12 else primeiro_dia.month + 1,
+            1,
+        )
+
+        qtd_expr = case(
+            (func.coalesce(ItemVenda.peso_kg, 0.0) > 0.0, func.coalesce(ItemVenda.peso_kg, 0.0)),
+            else_=func.coalesce(ItemVenda.quantidade, 0),
+        )
+        custo_unit_expr = func.nullif(func.coalesce(ItemVenda.preco_custo_unitario, 0.0), 0.0)
+        custo_unit_final = func.coalesce(custo_unit_expr, func.coalesce(Produto.preco_custo, 0.0))
+
+        stmt = (
+            select(
+                func.coalesce(
+                    func.sum((func.coalesce(ItemVenda.preco_unitario, 0.0) - custo_unit_final) * qtd_expr),
+                    0.0,
+                )
+            )
+            .select_from(ItemVenda)
+            .join(Venda, ItemVenda.venda_id == Venda.id)
+            .join(Produto, ItemVenda.produto_id == Produto.id)
+            .where(
+                Venda.cancelada == False,
+                Venda.created_at >= primeiro_dia,
+                Venda.created_at < proximo_mes,
+            )
+        )
+
+        result = await db.execute(stmt)
+        total = float(result.scalar() or 0.0)
+        return {"ano_mes": primeiro_dia.strftime("%Y-%m"), "total": total}
+    except Exception:
+        return {"ano_mes": datetime.utcnow().strftime("%Y-%m"), "total": 0.0}
 
 @router.get("/estoque")
 async def metricas_estoque(
