@@ -540,6 +540,40 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
             db.add(venda)
             await db.flush()  # obter venda.id
 
+            # Calcular custo proporcional do pagamento com base nos itens da dívida.
+            # Sem isso, relatórios podem considerar custo=0 e lucro=valor_pago.
+            custo_total_divida = 0.0
+            try:
+                itens_stmt = (
+                    select(ItemDivida, Produto.preco_custo)
+                    .join(Produto, ItemDivida.produto_id == Produto.id)
+                    .where(ItemDivida.divida_id == divida.id)
+                )
+                itens_res = await db.execute(itens_stmt)
+                itens_rows = itens_res.all() or []
+                for it, preco_custo_prod in itens_rows:
+                    try:
+                        qtd = float(getattr(it, 'peso_kg', 0.0) or 0.0) if float(getattr(it, 'peso_kg', 0.0) or 0.0) > 0 else float(getattr(it, 'quantidade', 0.0) or 0.0)
+                    except Exception:
+                        qtd = float(getattr(it, 'quantidade', 0.0) or 0.0)
+                    try:
+                        custo_unit = float(preco_custo_prod or 0.0)
+                    except Exception:
+                        custo_unit = 0.0
+                    custo_total_divida += custo_unit * qtd
+            except Exception:
+                custo_total_divida = 0.0
+
+            valor_pago = float(payload.valor)
+            try:
+                total_divida = float(getattr(divida, 'valor_total', 0.0) or 0.0)
+            except Exception:
+                total_divida = 0.0
+            fator = 1.0
+            if total_divida > 1e-9:
+                fator = max(0.0, min(1.0, valor_pago / total_divida))
+            custo_pagamento = float(custo_total_divida) * float(fator)
+
             # Garantir produto marcador 'PAGDIV' (não afeta estoque)
             prod_stmt = select(Produto).where(Produto.codigo == "PAGDIV")
             prod_res = await db.execute(prod_stmt)
@@ -564,7 +598,6 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
                 await db.flush()
 
             # Criar item sintético proporcional ao valor pago
-            valor_pago = float(payload.valor)
             item = ItemVenda(
                 venda_id=venda.id,
                 produto_id=prod.id,
@@ -572,6 +605,7 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
                 peso_kg=0.0,
                 preco_unitario=valor_pago,
                 subtotal=valor_pago,
+                preco_custo_unitario=custo_pagamento,
                 taxa_iva=0.0,
                 base_iva=0.0,
                 valor_iva=0.0,
