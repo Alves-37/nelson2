@@ -210,8 +210,9 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
                     # Essa heurística pode marcar produtos normais como serviço e impedir a baixa de estoque.
 
                     # Categorias alinhadas com PDV3 (ver /api/categorias):
-                    # 10=Impressão e Cópias, 14=Gráfica, 15=Serviços
-                    if categoria_id_prod in (10, 14, 15):
+                    # 15=Serviços
+                    # 10=Impressão e Cópias (NÃO é serviço), 14=Gráfica (NÃO é serviço)
+                    if categoria_id_prod in (15,):
                         is_servico = True
 
                     if is_servico:
